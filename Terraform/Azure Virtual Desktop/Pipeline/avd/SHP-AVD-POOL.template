@@ -1,0 +1,28 @@
+# name the module with the name of the AVD pool being provisioned
+module "AVD-DEMO-SHP" {
+
+  # Terraform Module Location
+  source = "git::URL PATH TO YOUR MODULE"
+
+  ## Mandatory Variables
+  avd_purpose          = "DEMO"
+  desktop_name         = "Demo Desktop"
+  user_group           = "OBJECT ID FOR AAD GROUP TO LINK TO AVD POOL FOR ACCESS"
+  friendly_name        = "Demo AVD Pool"
+  description          = "This is a demo pool"
+  subnet_name          = "SUBNET TO JOIN AVD HOSTS TO"
+  vm_size              = "Standard_D4s_v3"
+  diskType             = "Premium_LRS"
+  vm_count             = "2"
+  source_image_id      = "FULL RESOURCE ID FOR IMAGE IN A SHARED IMAGE GALLERY"
+  ou_path              = "FULL OU PATH FOR HOSTS"
+
+  ## Static Variables
+  workspace_id         = azurerm_virtual_desktop_workspace.workspace.id
+  loganalytics_id      = azurerm_log_analytics_workspace.Log_Analytics_WorkSpace.id
+  backups_rg           = var.backups_rg
+  vault_name           = azurerm_recovery_services_vault.vault.name
+  policy_id            = azurerm_backup_policy_vm.policy.id
+  local_password       = var.local_password
+  domain_password      = var.domain_password
+}

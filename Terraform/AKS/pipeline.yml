@@ -1,0 +1,125 @@
+name: $(BuildDefinitionName)_$(date:yyyyMMdd)$(rev:.r)
+
+trigger: none
+
+pr: none
+
+pool:
+  vmImage: 'windows-latest'
+
+# I'm trying to figure out a cool thing with these params 
+parameters:
+  - name: Action
+    displayName: Action
+    type: string
+    default: "apply"
+    values:
+      - apply
+      - destroy
+
+variables:
+- name: 'environment'
+  value: 'PRD'
+- name: 'terraform_folder'
+  value: 'terraform-files'
+- name: 'artifact_name'
+  value: 'projects'
+- name: plan
+  ${{ if eq(parameters.Action, 'apply') }}:
+    value: "plan"
+  ${{ if ne(parameters.Action, 'apply') }}:
+    value: "plan -destroy"
+
+stages:
+- stage: Build
+  jobs:
+  - job: "CopyFiles"
+    steps:    
+    - task: CopyFiles@2
+      displayName: 'Copy Files to: $(build.artifactstagingdirectory)/$(terraform_folder)'
+      inputs:
+        SourceFolder: $(terraform_folder)
+        TargetFolder: '$(build.artifactstagingdirectory)/$(terraform_folder)'
+        
+    - task: PublishBuildArtifacts@1
+      displayName: 'Publish Artifact: $(artifact_name)'
+      inputs:
+        pathToPublish: '$(Build.ArtifactStagingDirectory)'
+        artifactName: $(artifact_name)
+
+- stage: Terraform_Plan
+  jobs:
+  - job: "Terraform_Plan"
+    steps:
+      - checkout: none
+        clean: true
+        fetchDepth: 5
+        lfs: true
+        
+      - task: DownloadBuildArtifacts@0
+        inputs:
+          buildType: 'current'
+          downloadType: 'single'
+          artifactName: '$(artifact_name)'
+          downloadPath: '$(System.DefaultWorkingDirectory)'
+        displayName: 'Download Artifact'
+
+      - task: TerraformInstaller@0
+        inputs:
+          terraformVersion: '1.2.2'
+        displayName: 'Install Terraform'
+        
+      - script: |
+          az login --service-principal -u $(client_id) -p $(client_secret) --tenant $(tenant_id)  
+        displayName: 'Login to Azure'  
+
+      - script: |
+          terraform init -backend-config="key=$(backend_key)"
+        workingDirectory: $(System.DefaultWorkingDirectory)/$(artifact_name)/$(terraform_folder)
+        displayName: 'Terraform Init'
+                     
+      - script: |
+          terraform plan -var="client_id=$(client_id)" -var="client_secret=$(client_secret)"
+        workingDirectory: $(System.DefaultWorkingDirectory)/$(artifact_name)/$(terraform_folder)
+        displayName: 'Terraform Plan'
+
+- stage: deploy
+  jobs:
+    - deployment: DeployTerraform
+      displayName: Deploy to Azure
+      environment: $(environment)
+      strategy:
+        runOnce:
+          deploy:
+            steps:
+              - checkout: none
+                clean: true
+                fetchDepth: 5
+                lfs: true
+
+              - task: DownloadBuildArtifacts@0
+                inputs:
+                  buildType: 'current'
+                  downloadType: 'single'
+                  artifactName: '$(artifact_name)'
+                  downloadPath: '$(System.DefaultWorkingDirectory)'
+                displayName: 'Download Artifact'
+
+              - task: TerraformInstaller@0
+                inputs:
+                  terraformVersion: '1.2.2'
+                displayName: 'Install Terraform'
+
+              - script: |
+                  az login --service-principal -u $(client_id) -p $(client_secret) --tenant $(tenant_id)  
+                displayName: 'Login to Azure'  
+
+              - script: |
+                  terraform init -backend-config="key=$(backend_key)"
+                workingDirectory: $(System.DefaultWorkingDirectory)/$(artifact_name)/$(terraform_folder)
+                displayName: 'Terraform Init'
+
+              - script: |
+                  terraform apply -auto-approve -var="client_id=$(client_id)" -var="client_secret=$(client_secret)"
+                workingDirectory: $(System.DefaultWorkingDirectory)/$(artifact_name)/$(terraform_folder)
+                displayName: 'Terraform Apply'
