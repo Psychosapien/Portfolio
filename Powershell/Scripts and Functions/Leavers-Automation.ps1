@@ -49,9 +49,6 @@ $Bcc = "Leavers@domain.com"
 $SMTPServer = "mailrelay.domain.com"
 $SMTPPort = "25"
 
-# Initialise Oracle Array
-$OracleLeaversExport = @()
-
 #endregion globalVars
 
 #region functions
@@ -347,21 +344,6 @@ foreach ($leaver in $Data) {
 
                 # Encapsulate all of this in a try/catch block to capture any errors
                 try {
-
-                    #region oracleData
-
-                    # Yet another date re-format because why the hell not
-                    $oracleLeaverDate = $Result.Termination_Date | get-date -Format "dd-MMM-yyyy"
-
-                    # Add leaver information to a custom PS Object for the Oracle export
-                    $OracleLeaversInfo = New-Object psobject
-                    add-member -InputObject $OracleLeaversInfo -MemberType NoteProperty -Name ###_EmpNo -Value $user.employeenumber
-                    add-member -InputObject $OracleLeaversInfo -MemberType NoteProperty -Name Termination_Date -Value $oracleLeaverDate
-
-                    # Append the Leaver information to the Oracle leavers array
-                    $OracleLeaversExport += $OracleLeaversInfo
-                
-                    #endregion oracleData
 
                     $Groups = @()
 
@@ -850,48 +832,3 @@ foreach ($leaver in $Data) {
 Disconnect-ExchangeOnline -confirm:$False
 
 #endregion disconnectSessions
-
-#region oracleExport
-
-<# Notes 
-        Take the $oracleArray and build a csv export with it    
-        Then send the Oracle export, with a little switch statement to determine if it is dev or prd
-    #>
-
-
-try {
-    switch -wildcard ($env:computerName) {
-        "PRODHYBRIDSERVER" {
-            # Build out the file name and path
-            $OracleLeaverExportFilename = "XX###_TERMINATIONS_" + (get-date -Format "ddMMyyyy") + '.csv'
-            $OracleLeaverExportPath = "\\PATHTOEXTRACT\$OracleLeaverExportFilename"
-
-            # Do the export
-            $OracleLeaversExport | export-csv -Path $OracleLeaverExportPath  -NoTypeInformation -Append -Force
-        }
-        Default {
-
-            # Change the whatifpreference back to $false so we can finish off the script in dev
-            $WhatIfPreference = $false
-
-            # Build out the file name and path
-            $OracleLeaverExportFilename = "XX###_TERMINATIONS_DEV_" + (get-date -Format "ddMMyyyy") + '.csv'
-            $OracleLeaverExportPath = "\\PATHTOEXTRACT\\Archive\$OracleLeaverExportFilename"
-            
-            # Do the export
-            $OracleLeaversExport | export-csv -Path $OracleLeaverExportPath  -NoTypeInformation -Append -Force
-        }
-    }
-
-    # Final bit of output for the logs
-    Write-Outcome -Status "Success" -InputObject $GlobalResult -JobType "Script"
-
-}
-catch {
-    
-    # If we fall at the last hurdle, record this in the log
-    add-member -InputObject $GlobalResult -MemberType NoteProperty -Name Errors -Value $PSItem.Exception.Message -TypeName string    
-    Write-Outcome -InputObject $GlobalResult -Status "Error" -JobType "Script"
-
-}
-#endregion oracleExport
